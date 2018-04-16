@@ -1,0 +1,64 @@
+#!/bin/bash
+# SID Chooser
+# Pierre Hilbert 05/02/2013 Adaptation of Oracle SID Chooser for PostgreSQL
+# Pierre Hilbert 31/08/2015 Prevent no pgtab file. No more ask to choose if only one cluster.
+# Pierre Hilbert 30/06/2016 Adapting for Puppet v3 changes
+# Stephane Deffenin 25/10/2017 Add postgres version setting
+
+# Variable
+PGTAB_PATH='/etc/pgtab'
+
+change_home(){
+    if [ -n $1 ]; then
+        #Set environment variables
+        echo SID : $PG_SID
+        PGDATA=$(grep -v "#" $PGTAB_PATH | grep "$PG_SID:" | awk -F":" '{print ($2);}')
+        PGPORT=$(grep -v "#" $PGTAB_PATH | grep "$PG_SID:" | awk -F":" '{print ($3);}')
+        PGVERSION=$(cat $PGDATA/PG_VERSION)
+        PATH=/usr/pgsql-${PGVERSION}/bin/:${PATH}
+        export PGDATA PGPORT PATH
+    else
+        echo 'PostgreSQL environement variables have not been modified.'
+    fi
+}
+
+if [ -z $1 ] ;  then
+    if [ ! -d $PGTAB_PATH ]; then
+        # Scoop every first-field from pgtab, where not '#' nor '*' nor 'empty-line'
+        sid=($(grep -v '^#' $PGTAB_PATH | awk -F" " '{ print $1 }' |grep -v "^$" |awk -F":" '{print ($1);}' | sort ))
+
+        # Don't mess with zero-sid installation!
+        if [ ${#sid[*]} -eq 1 ]; then
+            [ ${sid[0]} ] && PG_SID=${sid[0]}
+            change_home $PG_SID
+        elif [ ${#sid[*]} -gt 0 ]; then
+            echo Choose your SID:
+            let i=0
+            while [ -n "${sid[$i]}" ]; do
+                let j=i+1
+                echo -e "\t$j - ${sid[$i]}"
+                let i++
+            done
+
+            # 15 sec. timeout: necessary for automatic scripts using the profile...
+            read -t 15 -p "Choice (15 sec.): " choice
+            [ -z "$choice" ]&&return 0
+            PG_SID=$choice
+            let --choice
+            [ ${sid[$choice]} ] && PG_SID=${sid[$choice]}
+            change_home $PG_SID
+        fi
+    else
+        echo "No cluster created, please configure one instance in foreman"
+    fi
+else
+    # I verify the sid asked is in /etc/pgtab
+    PARAM_SID=$(cat $PGTAB_PATH |grep -v '\<#*\>' | awk -F" " '{ print $1 }' |grep -v "*"|grep -v "^$" |awk -F":" '{print ($1);}' | grep "^${1}$")
+    if [ $? -eq 0 ] ; then
+        PG_SID=$PARAM_SID
+        change_home $PG_SID
+    else
+        echo -e "ERROR - The PG_SID asked does not exist in $PGTAB_PATH. PostgreSQL environment variables have not been modified."
+        exit 1
+    fi
+fi
