@@ -86,30 +86,18 @@ function az_blob() {
 	echo " $exec_timeUpload to Blob Done" | tee -a $upld_logs
 }
 
-function exec_transfer(){
-    case $1 in
-        -h|--help)
-    	help
-    	;;
-        aws)
-		s3_verify $4
-    	aws_s3 $2 $3
-    	;;
-    	az)
-		blob_verify $4
-    	az_blob $2 $3
-    	;;
-    esac
-}
-
-
-# Review the Access keys for the Azure Blob/AWS S3
-
-if [ $1 = 'aws' ]
-then
-	exec_transfer
-else
-	exec_transfer
-fi
+case $1 in
+    -h|--help)
+	help
+	;;
+    aws)
+	s3_verify $4   # Review the Access keys for the Azure Blob/AWS S3
+	aws_s3 $2 $3
+	;;
+	az)
+	blob_verify $4
+	az_blob $2 $3
+	;;
+esac
 
 
