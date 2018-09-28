@@ -10,13 +10,13 @@ Pguser='postgres'
 Pgexec="/usr/pgsql-9.2/bin"
 Pgpath="/u01/app/postgres/data/crm03"
 Pgreco="/var/lib/pgsql/refresh"
-Pgmasterserv='rtdkm1pgs91.hosting.as'
-Pgslaveserv='rtdkm1pgs90.hosting.as'
+Pgmasterserv='postgresql91.hosting.com'
+Pgslaveserv='postgresql90.hosting.com'
 PgData="/u01/app/postgres/data/crm03"
 ### TOMCAT
 Tcpath=/opt/tomcat-servers
 Tcuser='tomcat'
-Tomserv='rtdkm1pgs90.hosting.as'
+Tomserv='postgresql90.hosting.com'
 
 ## Function prototypes
 ### manageTomcat SERVER ACTION

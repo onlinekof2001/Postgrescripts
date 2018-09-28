@@ -1,9 +1,6 @@
 #!/bin/bash
 # SID Chooser
-# Pierre Hilbert 05/02/2013 Adaptation of Oracle SID Chooser for PostgreSQL
-# Pierre Hilbert 31/08/2015 Prevent no pgtab file. No more ask to choose if only one cluster.
-# Pierre Hilbert 30/06/2016 Adapting for Puppet v3 changes
-# Stephane Deffenin 25/10/2017 Add postgres version setting
+#
 
 # Variable
 PGTAB_PATH='/etc/pgtab'
