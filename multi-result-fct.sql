@@ -49,5 +49,8 @@ ORDER BY pg_table_size(c.oid) desc limit 30) LOOP
 END; $$ LANGUAGE PLPGSQL;
 
 
+-- 调用
 
-
+select * from list_obj_size('db') as tbl("Name" name, "Owner" text, "Size" text);
+select * from list_obj_size('tab')as tbl("Name" name, "Owner" text, "Size" text);
+select * from list_obj_size('tablist')as tbl("Name" name, "Owner" text, "Size" text);
