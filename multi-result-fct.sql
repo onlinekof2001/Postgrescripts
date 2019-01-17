@@ -54,3 +54,29 @@ END; $$ LANGUAGE PLPGSQL;
 select * from list_obj_size('db') as tbl("Name" name, "Owner" text, "Size" text);
 select * from list_obj_size('tab')as tbl("Name" name, "Owner" text, "Size" text);
 select * from list_obj_size('tablist')as tbl("Name" name, "Owner" text, "Size" text);
+
+
+vim list_obj_size.sh
+#!/bin/bash
+
+export PGHOST='rtdkn1pcs70.cuuxvcxw3hrr.rds.cn-north-1.amazonaws.com.cn'
+export PGUSER='posdata'
+export PGPASSWORD='ackdoiwe_!djfn'
+export PGPORT=60901
+
+cmd='/usr/bin/psql'
+
+case $1 in
+    db)
+        $cmd -d $PGUSER -c "select * from list_obj_size('db') as tbl("Name" name, "Owner" text, "Size" text);"
+    ;;
+    tab)
+        $cmd -d $PGUSER -c "select * from list_obj_size('tab') as tbl("Name" name, "Owner" text, "Size" text);"
+    ;;
+    tablist)
+        $cmd -d $PGUSER -c "select * from list_obj_size('tablist') as tbl("Name" name, "Owner" text, "Size" text);"
+    ;;
+    *)
+        echo "The options should be [db|tab|tablist]"
+    ;;
+esac
