@@ -1,4 +1,4 @@
-CREATE OR REPLACE FUNCTION list_obj_size(obj varchar) RETURNS SETOF RECORD AS 
+CREATE OR REPLACE FUNCTION f_lst_tab_size(obj varchar) RETURNS SETOF RECORD AS 
 $$
 DECLARE
 	dblist record;

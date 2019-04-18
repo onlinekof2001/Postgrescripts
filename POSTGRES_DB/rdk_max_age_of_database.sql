@@ -1,3 +1,6 @@
+/*
+TRANSACTION AGE
+*/
 SELECT freez, txns, ROUND(100*(txns/freez::float)) AS perc, datname
 FROM (
     SELECT foo.freez::int, age(datfrozenxid) AS txns, datname
@@ -11,3 +14,4 @@ FROM (
     WHERE d.datallowconn
 ) AS foo2
 ORDER BY 3 DESC, 4 ASC;
+
