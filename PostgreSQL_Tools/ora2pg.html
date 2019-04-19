@@ -1,0 +1,113 @@
+#PG tools ora2pg utility
+
+How to install and use the ora2pg:
+
+Normally we use ora2pg to migrate the data from Oracle to PostgreSQL. There're two servers which  already installed ora2pg tools on infrm1odb99 and infra1odb99
+
+However from time to time. we may need to use ora2pg on some other environment, such as preprod or cloud. this article aim to easily install the ora2pg and quick use for a task.
+
+More information please check the official doc below:
+http://ora2pg.darold.net/documentation.html#Installing-Ora2Pg
+
+Requirement
+The Oracle Instant Client or a full Oracle installation must be installed on the system, download address:
+https://www.oracle.com/technetwork/topics/linuxx86-64soft-092277.html
+
+    rpm -ivh oracle-instantclient12.2-basic-12.2.0.1.0-1.x86_64.rpm
+    rpm -ivh oracle-instantclient12.2-devel-12.2.0.1.0-1.x86_64.rpm
+    rpm -ivh oracle-instantclient12.2-jdbc-12.2.0.1.0-1.x86_64.rpm
+    rpm -ivh oracle-instantclient12.2-sqlplus-12.2.0.1.0-1.x86_64.rpm
+
+
+Install the rpm package, if some dependence packages are needed, please use yum install them first.
+rpm -Uvh oracle-instantclient12.2-basic-12.2.0.1.0-1.x86_64.rpm \
+                oracle-instantclient12.2-devel-12.2.0.1.0-1.x86_64.rpm \
+                oracle-instantclient12.2-jdbc-12.2.0.1.0-1.x86_64.rpm \
+                oracle-instantclient12.2-sqlplus-12.2.0.1.0-1.x86_64.rpm
+
+Installing Ora2Pg
+Like any other Perl Module Ora2Pg can be installed with the following commands:
+
+        tar xjf ora2pg-x.x.tar.bz2
+        cd ora2pg-x.x/
+        perl Makefile.PL
+        make && make install
+
+
+Installing DBD::Oracle
+After setting ORACLE_HOME and LD_LIBRARY_PATH environment variables as root user, install DBD::Oracle. Proceed as follow:
+
+        export LD_LIBRARY_PATH=/usr/lib/oracle/12.2/client64/lib
+        export ORACLE_HOME=/usr/lib/oracle/12.2/client64/lib
+        perl -MCPAN -e 'install DBD::Oracle'
+
+Install through CPAN manually if the above doesn't work:
+
+        #perl -MCPAN -e shell
+        cpan> get DBD::Oracle
+        cpan> quit
+        cd ~/.cpan/build/DBD-Oracle*
+        export LD_LIBRARY_PATH=/usr/lib/oracle/11.2/client64/lib
+        export ORACLE_HOME=/usr/lib/oracle/11.2/client64/lib
+        perl Makefile.PL
+        make
+        make install
+
+If you meet a problem about:  "Oracle.h:37:17: fatal error: oci.h: No such file or directory"， try to use locate command to locate them first
+The reason is that Makefile.PL does not write the correct Oracle include path to Makefile
+
+        # locate oci.h
+        /usr/include/oracle/11.2/client64/oci.h
+        export C_INCLUDE_PATH="/usr/include/oracle/11.2/client64/"
+
+Then compiling again.
+
+Ora2Pg usage
+By default Ora2Pg will look for /etc/ora2pg/ora2pg.conf configuration file，also you can give the path where they're located with option -c
+
+        /usr/local/bin/ora2pg -c /etc/ora2pg/ora2pg_new.conf
+
+For more available options, please use ora2pg --help, Main configuration for Oracle migrate to PostgreSQL as following:
+
+      ORACLE_DSN  
+        dbi:Oracle:host=oradb_host.myhost.com;sid=DB_SID;port=1521
+      ORACLE_USER
+        <ora_username> must has schema access right
+      ORACLE_PWD
+        <ora_password>
+      SCHEMA
+        <ora_schema> actually in oracle db username equal to schema name
+      PG_SCHEMA
+        <pg_schema> the postgresql schema that data wanted to be import
+      TYPE
+        - TABLE: Extract all tables with indexes, primary keys, unique keys,
+          foreign keys and check constraints.
+        - VIEW: Extract only views.
+        - GRANT: Extract roles converted to Pg groups, users and grants on all
+          objects.
+        - SEQUENCE: Extract all sequence and their last position.
+        - TABLESPACE: Extract storage spaces for tables and indexes (Pg >= v8).
+        - TRIGGER: Extract triggers defined following actions.
+        - FUNCTION: Extract functions.
+        - PROCEDURE: Extract procedures.
+        - PACKAGE: Extract packages and package bodies.
+        - INSERT: Extract data as INSERT statement.
+        - COPY: Extract data as COPY statement.
+        - PARTITION: Extract range and list Oracle partitions with subpartitions.
+        - TYPE: Extract user defined Oracle type.
+        - FDW: Export Oracle tables as foreign table for oracle_fdw.
+        - MVIEW: Export materialized view.
+        - QUERY: Try to automatically convert Oracle SQL queries.
+        - KETTLE: Generate XML ktr template files to be used by Kettle.
+        - DBLINK: Generate oracle foreign data wrapper server to use as dblink.
+        - SYNONYM: Export Oracle's synonyms as views on other schema's objects.
+        - DIRECTORY: Export Oracle's directories as external_file extension objects.
+        - LOAD: Dispatch a list of queries over multiple PostgreSQl connections.
+        - TEST: perform a diff between Oracle and PostgreSQL database.
+        - TEST_VIEW: perform a count on both side of rows returned by views.
+      ALLOW
+        <objects> table list, separated by space.
+      OUTPUT
+        <output_filename> 
+      OUTPUT_DIR
+        <output_filepath>
