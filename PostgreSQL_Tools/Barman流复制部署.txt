@@ -1,0 +1,127 @@
+#部署barman流复制
+
+yum install python-argcomplete \
+python-argh \
+python-argparse \
+python-psycopg2 \
+python-dateutil \
+python-setuptools \
+postgresql \
+rsync
+
+# 安装部分, 基于yum源的安装
+yum install barman
+
+# 安装基于源码编译
+# Download page
+https://sourceforge.net/projects/pgbarman/files/
+$ tar zxvf barman-2.6.tar.gz
+$ cd barman-2.6
+$ ./setup.py build
+$ ./setup.py install
+
+# 流备份配置
+http://docs.pgbarman.org/release/2.7/barman.5.html
+
+# 全局配置
+[barman]
+; Main data directory for Barman
+barman_home = /barman
+
+; System user
+barman_user = barman
+
+; Location of Barman’s log file 
+log_file = /var/log/barman/barman.log
+
+; Level of logging (DEBUG, INFO, WARNING, ERROR, CRITICAL)
+log_level = INFO
+
+; This option allows you to control the way Barman interacts with PostgreSQL for backups
+; exclusive_backup (default when backup_method = rsync): barman backup executes backup operations using the standard exclusive backup approach (technically through pg_start_backup and pg_stop_backup)
+; concurrent_backup (default when backup_method = postgres): if using PostgreSQL 9.2, 9.3, 9.4, and 9.5, Barman requires the pgespresso module to be installed on the PostgreSQL server and can be used to perform a backup from a standby server. Starting from PostgreSQL 9.6, Barman uses the new PostgreSQL API to perform backups from a standby server
+; external_configuration: if present, any warning regarding external configuration files is suppressed during the execution of a backup
+backup_options = concurrent_backup
+
+; Standard compression algorithm applied to WAL files. Possible values are: gzip (requires gzip to be installed on the system), bzip2 (requires bzip2), pigz (requires pigz), pygzip (Python’s internal gzip compressor) and pybzip2 (Python’s internal bzip2 compressor). Global/Server
+compression = gzip
+
+; This option allows you to activate log file shipping through PostgreSQL’s archive_command for a server, WAL files that Postgres deposits in the incoming directory
+archiver = on
+
+; Minimum number of backups to be retained
+minimum_redundancy = 0
+
+; Policy for retention of periodic backups and archive logs. For redundancy based retention policy use “REDUNDANCY i” (where i is an integer > 0 and defines the number of backups to retain). For recovery window retention policy use “RECOVERY WINDOW OF i DAYS” or “RECOVERY WINDOW OF i WEEKS” or “RECOVERY WINDOW OF i MONTHS”
+retention_policy = RECOVERY WINDOW OF 1 WEEK
+
+; Currently only “auto” is implemented
+retention_policy_mode = auto
+
+; Policy for retention of archive logs (WAL files)
+wal_retention_policy = main
+
+; Barman supports the inclusion of multiple configuration files
+configuration_files_directory = /etc/barman.conf.d
+
+; Maximum execution time, in seconds per server, for a barman check command
+check_timeout = 5
+
+# 服务端配置
+; server name
+[mstpn1pgs00_master]
+
+; description information
+description =  "mstpn1pgs00 master database(Streaming Only)"
+
+; Connection string used by Barman to connect to the Postgres server
+conninfo = host=mstpn1pgs00 port=60901 user=barman dbname=masterprice
+
+; Connection string used by Barman to connect to the Postgres server via streaming replication protocol
+streaming_conninfo = host=mstpn1pgs00 port=60901 user=streaming_barman dbname=postgres
+
+; This option allows you to use the PostgreSQL’s streaming protocol to receive transaction logs from a server
+streaming_archiver = on
+
+archiver = on
+
+; Physical replication slot to be used by the receive-wal command when streaming_archiver is set to on
+slot_name = barman
+
+; Configure the method barman used for backup execution. If set to rsync (default). If set to postgres barman will use the pg_basebackup
+backup_method = postgres
+
+; Directory where WAL files are streamed from the PostgreSQL server to Barman
+streaming_wals_directory=/barman/mstpn1pgs00_master/streaming
+
+; 
+minimum_redundancy = 2
+retention_policy = RECOVERY WINDOW OF 1 WEEK
+
+; One or more absolute paths, separated by colon, where Barman looks for executable files
+path_prefix=/usr/pgsql-10/bin
+
+# 配置数据库连接
+$ createuser -s -P barman
+$ createuser -P --replication streaming_barman
+
+# 修改hba配置允许远程用户的barman访问
+host    all             all             10.70.xxx.xxx/32    md5
+
+# ssh 连接互信, 允许barman无秘钥理解postgres. 物理数据文件基于rsync的备份
+# 拷贝公钥中的内容 .ssh/id_rsa.pub 到 .ssh/authorized_keys, 允许barman连接postgres获取自己的公钥。验证：
+$ ssh postgres@<hostname> -C true
+
+
+# 修改postgres.conf配置开启replica(logical)的归档模式
+wal_level = 'replica'
+max_wal_senders = 2
+max_replication_slots = 2
+
+# 验证barman可以连接到postgres db
+$ psql -c 'SELECT version()' -U barman -h <hostname> -p <port> postgres
+
+# 创建replication slots
+barman receive-wal --create-slot <server_name>
+
+
