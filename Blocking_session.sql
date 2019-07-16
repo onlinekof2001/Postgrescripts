@@ -1,6 +1,7 @@
 /*
 https://yq.aliyun.com/articles/86631
 https://yq.aliyun.com/ask/184?order=ctime
+https://wiki.postgresql.org/wiki/Lock_Monitoring
 */
 
 -- Query 1
