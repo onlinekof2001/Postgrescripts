@@ -1,5 +1,6 @@
 #!/bin/bash
 
+# list the command
 pgcmd='/usr/bin/psql'
 pgpwd='/home/postgres/.pgpass'
 
