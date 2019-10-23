@@ -6,16 +6,35 @@
 #########################################################
 
 function etime() {
-    exec_time=$(date +'%Y-%m-%d %H:%M:%S')
+    echo "$(date +'%Y-%m-%d %H:%M:%S') $1\n"
 }
+
 
 awscmd='/usr/bin/aws'
 upld_logs='/tmp/upload_backupset.log'
+bkp_dir='/barman/backup_comp'
+del_dat=$(date +%F -d'15 days ago')
+bkp_con='barman-respertory-prod'
+
+if [[ $1='az' ]]
+then 
+    acs_keyf='/opt/az_access_keyfile.ac'
+else
+    acs_keyf='/opt/aws_access_keyfile.ac'
+fi
 
 NAME=`basename $0`
 if [ ${NAME:0:1} = "S" -o ${NAME:0:1} = "K" ]
     then
     NAME=${NAME:3}
+fi
+
+if [ ! -f $acs_keyf ]
+then
+    etime "WARN access key file doesn\'t exist, you need to also fill the access key inside $acs_keyf"
+    touch $acs_keyf
+else
+    cat $acs_keyf
 fi
 
 function help() {
@@ -43,61 +62,92 @@ function help() {
 }
 
 function s3_verify() {
-    if [ -e $4 ]
-	then
-        awski=$(awk -F';' '{print $1}' $4)
-	    awsak=$(awk -F';' '{print $2}' $4)
-	    awsr=$(awk -F';' '{print $3}' $4)
+    acsf=$1
+    if [ -e ${acsf} ]
+    then
+        awski=$(awk -F';' '{print $1}' ${acsf})
+	awsak=$(awk -F';' '{print $2}' ${acsf} )
+	awsr=$(awk -F';' '{print $3}' ${acsf})
         export AWS_ACCESS_KEY_ID = "$awski"
         export AWS_SECRET_ACCESS_KEY = "$awsak"
-	    export AWS_DEFAULT_REGION = "$awsr"
-	    export AWS_DEFAULT_OUTPUT = json
-	else
-	    echo -e "You need to point the S3 Access key file. \nMore environment variables please see https://docs.aws.amazon.com/cli/latest/userguide/cli-environment.html"
+	export AWS_DEFAULT_REGION = "$awsr"
+	export AWS_DEFAULT_OUTPUT = json
+    else
+	echo -e "You need to point the S3 Access key file. \nMore environment variables please see https://docs.aws.amazon.com/cli/latest/userguide/cli-environment.html"
     fi
 }
 
 function blob_verify() {
-    if [ -e $4 ]
-	then
-        depp=$(awk -F';' '{print $1}' $4)
-	    azac=$(awk -F';' '{print $2}' $4)
-	    azak=$(awk -F';' '{print $3}' $4)
-	    azes=$(awk -F';' '{print $4}' $4)
-	    export AZURE_STORAGE_CONNECTION_STRING="DefaultEndpointsProtocol=$depp;AccountName=$azac;AccountKey=$azak;EndpointSuffix=$azes"
+    acsf=$1
+    if [[ -z ${AZURE_STORAGE_CONNECTION_STRING} ]]
+    then
+        depp=$(awk -F';' '{print $1}' ${acsf})
+        azac=$(awk -F';' '{print $2}' ${acsf})
+        azak=$(awk -F';' '{print $3}' ${acsf})
+        azes=$(awk -F';' '{print $4}' ${acsf})
+        export AZURE_STORAGE_CONNECTION_STRING="DefaultEndpointsProtocol=$depp;AccountName=$azac;AccountKey=$azak;EndpointSuffix=$azes"
     else
-	    echo -e "You need to point the Blob Access Key file."
-	fi
+	echo -e "You need to point the Blob Access Key file."
+    fi
 }
 
 function aws_s3() {
-    etime
-    echo "$exec_time Uploading the backupset $3" | tee -a $upld_logs
-	aws s3 sync $3 $2
-	etime
-	echo "$exec_time Upload to S3 Done" | tee -a $upld_logs
+    ctn=$1
+    fln=$2
+    etime "INFO Uploading the backupset $3" | tee -a $upld_logs
+    aws s3 sync $ctn $fln
+    etime "INFO Upload to S3 Done" | tee -a $upld_logs
 }
 
 function az_blob() {
-    etime
-    echo "$exec_time Uploading the backupset $3" | tee -a $upld_logs
-    az storage blob upload --container-name "$2" --file "$3" --name "$3"
-    etime	
-	echo " $exec_timeUpload to Blob Done" | tee -a $upld_logs
+    ctn=$1
+    fln=$2
+    bna=$3
+    etime "INFO Uploading the backupset $3" | tee -a $upld_logs
+    az storage blob upload --container-name ${ctn} --file ${fln} --name ${bna}
+    etime "INFO Upload to Blob Done" | tee -a $upld_logs
 }
+
+function az_del(){
+    ctn=$1
+    fln=$2
+    etime "INFO deleting the backupset $2" | tee -a $upld_logs
+    az storage blob delete --container-name ${ctn} --name ${fln}
+    etime "INFO deleting $2 from Blob Done" | tee -a $upld_logs
+}
+
+#shell call
+source /var/lib/barman/monit_barman.sh bkps
 
 case $1 in
     -h|--help)
 	help
-	;;
+    ;;
     aws)
-	s3_verify $4   # Review the Access keys for the Azure Blob/AWS S3
-	aws_s3 $2 $3
-	;;
-	az)
-	blob_verify $4
-	az_blob $2 $3
-	;;
+	s3_verify ${acs_keyf}   # Review the Access keys for the Azure Blob/AWS S3
+	aws_s3 ${awsc} ${awsf}
+    ;;
+    az)
+	blob_verify ${acs_keyf}
+        while read bkphst bkpid
+        do
+            if [[ ! -f ${bkp_dir}/${bkphst}_${bkpday}.tar.gz ]]
+	    then
+                barman list-files ${bkphst} ${bkpid} | tar czvf ${bkp_dir}/${bkphst}_${bkpday}.tar.gz -T -
+	        az_blob ${bkp_con} ${bkp_dir}/${bkphst}_${bkpday}.tar.gz ${bkphst}_${bkpday}
+                az_del ${bkp_con} ${bkphst}_${del_dat}
+            elif [[ $(az storage blob show --container-name ${bkp_con} --name ${bkpid} | grep -c state) -gt 1 ]]
+            then
+                az_blob ${bkp_con} ${bkp_dir}/${bkphst}_${bkpday}.tar.gz ${bkphst}_${bkpday}
+                az_del ${bkp_con} ${bkphst}_${del_dat}
+            fi
+            if [ $? = 0 ]
+            then
+                rm -f ${bkp_dir}/${bkphst}_${bkpday}.tar.gz
+            fi
+        done < ${bkpsid}
+    ;;
+    *)
+        echo 'noaction'
+    ;;
 esac
-
-
