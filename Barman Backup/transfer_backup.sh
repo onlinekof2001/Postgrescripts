@@ -113,11 +113,53 @@ function az_del(){
     fln=$2
     etime "INFO deleting the backupset $2" | tee -a $upld_logs
     az storage blob delete --container-name ${ctn} --name ${fln}
-    etime "INFO deleting $2 from Blob Done" | tee -a $upld_logs
+    if [ $? -eq 0 ]
+    then
+    etime "INFO delete $2 from Blob Done" | tee -a $upld_logs
+    else
+    etime "INFO delete $2 from Blob is not finish" | tee -a $upld_logs
+    fi
 }
 
 #shell call
+trnf_bar() {
 source /var/lib/barman/monit_barman.sh bkps
+while read bkphst bkpid
+do
+    if [[ ! -f ${bkp_dir}/${bkphst}_${bkpday}.tar.gz ]]
+	then
+        barman list-files ${bkphst} ${bkpid} | tar czvf ${bkp_dir}/${bkphst}_${bkpday}.tar.gz -T -
+	barman list-files --target wal ${bkphst} ${bkpid} | tar czvf ${bkp_dir}/${bkphst}_${bkpday}_wal.tar.gz -T -
+	az_blob ${bkp_con} ${bkp_dir}/${bkphst}_${bkpday}.tar.gz ${bkphst}_${bkpday}
+        az_blob ${bkp_con} ${bkp_dir}/${bkphst}_${bkpday}_wal.tar.gz ${bkphst}_${bkpday}_wal
+        az_del ${bkp_con} ${bkphst}_${del_dat}
+        az_del ${bkp_con} ${bkphst}_${del_dat}_wal
+    elif [[ $(az storage blob show --container-name ${bkp_con} --name ${bkpid} | grep -c state) -gt 1 ]]
+    then
+        az_blob ${bkp_con} ${bkp_dir}/${bkphst}_${bkpday}.tar.gz ${bkphst}_${bkpday}
+        az_blob ${bkp_con} ${bkp_dir}/${bkphst}_${bkpday}_wal.tar.gz ${bkphst}_${bkpday}_wal
+        az_del ${bkp_con} ${bkphst}_${del_dat}
+        az_del ${bkp_con} ${bkphst}_${del_dat}_wal
+    fi
+    if [ $? = 0 ]
+    then
+        rm -f ${bkp_dir}/${bkphst}_${bkpday}.tar.gz
+    fi
+done < ${bkpsid}
+}
+
+trnf_xtr() {
+    xtrbkp_path=$1
+    xtrbkp_file=$2
+    xtrbkp_del_file=$(date +%y%m%d -d'15 days ago')_full
+    az_blob ${xtrpp_con} ${xtrbkp_path} ${xtrbkp_file}
+    if [[ $? -eq 0 ]]
+    then
+        echo ${xtrbkp_path}
+        az_del ${xtrpp_con} ${xtrbkp_del_file}
+    fi
+}
+
 
 case $1 in
     -h|--help)
@@ -129,23 +171,15 @@ case $1 in
     ;;
     az)
 	blob_verify ${acs_keyf}
-        while read bkphst bkpid
-        do
-            if [[ ! -f ${bkp_dir}/${bkphst}_${bkpday}.tar.gz ]]
-	    then
-                barman list-files ${bkphst} ${bkpid} | tar czvf ${bkp_dir}/${bkphst}_${bkpday}.tar.gz -T -
-	        az_blob ${bkp_con} ${bkp_dir}/${bkphst}_${bkpday}.tar.gz ${bkphst}_${bkpday}
-                az_del ${bkp_con} ${bkphst}_${del_dat}
-            elif [[ $(az storage blob show --container-name ${bkp_con} --name ${bkpid} | grep -c state) -gt 1 ]]
-            then
-                az_blob ${bkp_con} ${bkp_dir}/${bkphst}_${bkpday}.tar.gz ${bkphst}_${bkpday}
-                az_del ${bkp_con} ${bkphst}_${del_dat}
-            fi
-            if [ $? = 0 ]
-            then
-                rm -f ${bkp_dir}/${bkphst}_${bkpday}.tar.gz
-            fi
-        done < ${bkpsid}
+	if [[ $2 = 'barman' ]]
+    	then
+            trnf_bar
+    	elif [[ $2 = 'xtrbkp' ]]
+    	then
+            trnf_xtr $3 $4
+    	else
+            echo 'Your should choose [barman | xtrbkp]'
+    	fi
     ;;
     *)
         echo 'noaction'
