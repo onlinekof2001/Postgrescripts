@@ -74,4 +74,4 @@ FROM  (
  dead_tuples                       |          0 |              |              
 (11 rows)
 
-select pg_column_size("CREATE_TIME") from pg_tbl_benefit_item
+select pg_column_size("CREATE_TIME") from pg_tbl_benefit_item;
