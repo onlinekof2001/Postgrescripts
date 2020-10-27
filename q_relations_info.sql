@@ -12,6 +12,29 @@ FROM pg_catalog.pg_statio_user_tables
 WHERE (schemaname=any(array['public'::text,'pg_catalog'::text,'information_schema'::text])) is false
 ORDER BY pg_total_relation_size(relid) DESC;
 
+/* Method 2 */
+
+SELECT *, pg_size_pretty(total_bytes) AS total
+    , pg_size_pretty(index_bytes) AS INDEX
+    , pg_size_pretty(toast_bytes) AS toast
+    , pg_size_pretty(table_bytes) AS TABLE
+  FROM (
+  SELECT *, total_bytes-index_bytes-COALESCE(toast_bytes,0) AS table_bytes FROM (
+      SELECT c.oid,nspname AS table_schema, relname AS TABLE_NAME
+              , c.reltuples AS row_estimate
+              , pg_total_relation_size(c.oid) AS total_bytes
+              , pg_indexes_size(c.oid) AS index_bytes
+              , pg_total_relation_size(reltoastrelid) AS toast_bytes
+        FROM pg_class c
+        LEFT JOIN pg_namespace n ON n.oid = c.relnamespace
+        WHERE relkind = 'r'
+		AND n.nspname !~ '^pg_' 
+		AND n.nspname <> 'information_schema' 
+		AND n.nspname != 'public'
+  ) a
+) a;
+
+
 /* General Table hit ratio, table hit ratio indicate how many page can be cache to the mem while the pages read */
 
 SELECT psot.schemaname as schema_name,
