@@ -13,14 +13,13 @@ function etime() {
 awscmd='/usr/bin/aws'
 upld_logs='/tmp/upload_backupset.log'
 bkp_dir='/barman/backup_comp'
-del_dat=$(date +%F -d'15 days ago')
 bkp_con='barman-respertory-prod'
 
 if [[ $1='az' ]]
 then 
-    acs_keyf='/opt/az_access_keyfile.ac'
+    acs_keyf='/opt/.az_access_keyfile.ac'
 else
-    acs_keyf='/opt/aws_access_keyfile.ac'
+    acs_keyf='/opt/.aws_access_keyfile.ac'
 fi
 
 NAME=`basename $0`
@@ -61,6 +60,7 @@ function help() {
     exit 0;
 }
 
+# read verify keys for S3 or Blob
 function s3_verify() {
     acsf=$1
     if [ -e ${acsf} ]
@@ -91,6 +91,7 @@ function blob_verify() {
     fi
 }
 
+# Upload file to S3 or Blob
 function aws_s3() {
     ctn=$1
     fln=$2
@@ -121,9 +122,10 @@ function az_del(){
     fi
 }
 
-#shell call
+#main action for barman backup or Xtrabackup
 trnf_bar() {
 source /var/lib/barman/monit_barman.sh bkps
+del_dat=$(date +%F -d'15 days ago')
 while read bkphst bkpid
 do
     if [[ ! -f ${bkp_dir}/${bkphst}_${bkpday}.tar.gz ]]
@@ -151,12 +153,14 @@ done < ${bkpsid}
 trnf_xtr() {
     xtrbkp_path=$1
     xtrbkp_file=$2
-    xtrbkp_del_file=$(date +%y%m%d -d'15 days ago')_full
+    xtrbkp_del_file=$(date +%Y%m%d -d'15 days ago')
+	xtrbkp_del_incr=$(date +%Y%m%d%H -d'15 days ago')
     az_blob ${xtrpp_con} ${xtrbkp_path} ${xtrbkp_file}
     if [[ $? -eq 0 ]]
     then
         echo ${xtrbkp_path}
-        az_del ${xtrpp_con} ${xtrbkp_del_file}
+        az_del ${xtrpp_con} ${xtrbkp_del_file}_pr_full
+		az_del ${xtrpp_con} ${xtrbkp_del_file}_pr_full
     fi
 }
 
