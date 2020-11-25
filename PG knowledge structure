@@ -1,0 +1,327 @@
+Posgtres 知识体系结构
+
+实例(内存结构+物理对象) -> 后台进程 -> 数据文件
+
+内存结构
+
+buffer
+src/backend/storage/buffer/bufmgr.c
+shared buffer 存放共享的磁盘上的数据信息，通常设置为1/4的物理内存大小，因为PG同时依赖OS层面的Cache，所以并不意味之设置shared buffers越大越好。相应shared buffers越大, 也要相应增大max_wal_size保证在buffer中的变更数据能被完整的写到WAL目录中。
+https://www.postgresql.org/docs/9.5/runtime-config-resource.html
+huge_pages try/on/off
+max_prepared_transactions 预处理事务的功能，如果需要使用，该值应该设置到和max_connections大小相同。 什么是预处理事务？
+work_mem 指定在写入临时磁盘文件前每个会话排序和hash表操作可用的内存大小。复杂的查询可能同时包含排序和hash表的操作，每一个操作都可能会被分配近似于该设定的内存大小，或者多个会话同时跑排序和hash的操作。因此实际需要使用的内存可能几倍于work_mem的设定。这时会调用
+maintenance_work_mem 用于vacuum, create index and alter table add foreign key。 autovacuum同样会调用maintence_work_mem,其值为autovacuum_max_works * maintence_work_mem 如果单独定义了autovacuum_work_mem, 则autovacuum使用autovacuum_work_mem区域。
+
+autovacuum_work_mem  默认值为-1，不开启，表示autovacuum时使用maintence_work_mem
+temp_buffers 临时表存放的缓存区域。
+effective_cache_size
+
+
+查看postgres主进程(监听进程)和fork出来的子进程
+src/backend/pgmaster
+https://doxygen.postgresql.org/dir_503f9b8573d3bbef2c9164919e7ad292.html
+$ netstat -antlp | grep postgres
+
+
+
+tcp        0      0 0.0.0.0:60901           0.0.0.0:*               LISTEN      43650/postgres    
+
+ps --ppid 43650 u
+USER        PID %CPU %MEM    VSZ   RSS TTY      STAT START   TIME COMMAND
+postgres  43651  0.0  0.0 258672  2520 ?        Ss   Oct08   0:00 postgres: logger   
+postgres  43653  0.0  0.1 405984  4644 ?        Ss   Oct08   0:01 postgres: checkpointer   
+postgres  43654  0.0  0.0 405984  4000 ?        Ss   Oct08   0:31 postgres: background writer   
+postgres  43655  0.0  0.1 405984  6708 ?        Ss   Oct08   0:32 postgres: walwriter   
+postgres  43656  0.0  0.0 406564  3652 ?        Ss   Oct08   1:54 postgres: autovacuum launcher   
+postgres  43657  0.0  0.0 260932  2592 ?        Ss   Oct08   0:13 postgres: archiver   
+postgres  43658  0.0  0.0 261212  2884 ?        Ss   Oct08   4:12 postgres: stats collector   
+postgres  43659  0.0  0.0 406296  3052 ?        Ss   Oct08   0:01 postgres: pglogical supervisor   
+postgres  43660  0.0  0.0 406304  3096 ?        Ss   Oct08   0:01 postgres: logical replication launcher   
+postgres  43665  0.0  0.1 407348  5400 ?        Ss   Oct08   0:02 postgres: pglogical manager 16392   
+
+
+logger 负责system log的进程
+checkpointer 主要负责检查点的进程
+https://www.postgresql.org/docs/9.6/wal-configuration.html
+ckp在达到checkpoint_timeout时， 或者超过max_wal_size值时触发检查点。较少的设定值增加检查点的频率，同时加重IO的负担，需要找到平衡点。同时需要考虑full_page_writes参数的设置。
+
+9.6之后新的参数checkpoint_flush_after 当ckp发生的时间内到达该参数指定的字节数后，强制将刷新到系统中的数据写入磁盘。
+
+
+walwriter 负责将wal从wal buffer写到磁盘的进程
+https://www.postgresql.org/docs/9.6/runtime-config-wal.html
+wal_level
+fsync
+synchronous_commit on(local)、off 开启表示需要事务提交后，需要确定提交的事务被刷新到WAL disk中才会向客户端反馈成功的信息。 其目的是确保commit的事务被记录到WAL disk中。
+
+
+
+wal_sync_method
+full_page_writes
+
+触发WAL flush的条件
+commit
+wal_writer_delay
+
+数据库可靠性的考虑
+https://www.postgresql.org/docs/13/wal-reliability.html
+
+
+
+autovacuum 负责自动回收页的进程
+archiver 归档wal进程
+stat collector 统计信息的收集进程
+pglogical 逻辑复制额进程
+
+
+checkpoint
+https://www.postgresql.org/docs/9.6/sql-checkpoint.html
+
+
+system table on PG
+(options: S = show system objects, + = additional detail)
+\dS 
+
+获取系统表对象
+select relname from pg_class where relnamespace in (select oid from pg_namespace where nspname='pg_catalog') and relkind='r';
+
+
+ pg_aggregate 聚合函数信息
+ pg_am  数据库目前支持的索引类型
+ pg_amop 索引访问方法，操作符
+ pg_amproc 索引访问方法，函数
+ pg_attrdef
+ pg_attribute cmax, cmin, ctid, xmin, xmax均存在改表中
+ select * from pg_attribute where attrelid='t1'::regclass;
+ 
+ alter table t1 set with oids (oids 隐藏字段，因此在attname中看不到改行，加上改配置后可以看到attnum为-2)
+ 
+ 
+ 
+ pg_auth_members 用户和属主的授权关系
+ 
+ select pr.oid,rolname from pg_roles pr, pg_auth_members pam where pr.oid=pam.roleid;
+ 
+ 
+ pg_authid
+ 
+ 
+ pg_cast 显示的路径类型转化信息
+ https://www.postgresql.org/docs/9.6/catalog-pg-cast.html
+ 
+ pg_class
+ https://www.postgresql.org/docs/9.6/catalog-pg-class.html
+
+ pg_collation
+ pg_constraint
+ pg_conversion
+ pg_database
+ pg_db_role_setting
+ pg_default_acl
+ pg_depend
+ pg_description
+ pg_enum
+ pg_event_trigger 事件触发器信息
+ 
+ 
+ pg_extension
+ pg_foreign_data_wrapper
+ pg_foreign_server
+ pg_foreign_table
+ pg_index
+ pg_inherits
+ pg_init_privs
+ pg_language 过程语言
+ 
+ 
+ pg_largeobject
+ pg_largeobject_metadata
+ pg_namespace
+ pg_opclass
+ pg_operator
+ pg_opfamily
+ pg_partitioned_table
+ pg_pltemplate
+ pg_policy
+ pg_proc 函数的相关新
+ 
+create or replace function multple(a int,b int) returns int as $$
+declare
+begin
+return a * b;
+end;
+$$ language plpgsql strict;
+
+select * from pg_proc where proname='multple'
+proargnames 参数名
+prosrc 函数体内容
+
+PG允许函数同名，参数不同
+
+ pg_publication
+ pg_publication_rel
+ pg_range
+ pg_replication_origin
+ pg_rewrite
+ pg_seclabel
+ pg_sequence
+ pg_shdepend
+ pg_shdescription
+ pg_shseclabel
+ pg_statistic
+ pg_statistic_ext
+ pg_subscription
+ pg_subscription_rel
+ pg_tablespace
+ pg_transform
+ pg_trigger
+ pg_ts_config
+ pg_ts_config_map
+ pg_ts_dict
+ pg_ts_parser
+ pg_ts_template
+ pg_type
+ pg_user_mapping
+ 
+ 
+ PG 系统视图
+ select relname from pg_class where relnamespace=(select oid from pg_namespace where nspname='pg_catalog') and relkind='v' order by 1;
+ 
+扩展信息 
+ pg_available_extension_versions
+ pg_available_extensions
+ pg_config
+ pg_cursors
+ pg_file_settings
+ pg_group
+ pg_hba_file_rules
+ pg_indexes
+ pg_locks
+ pg_matviews
+ pg_policies
+ pg_prepared_statements
+ pg_prepared_xacts
+ pg_publication_tables
+ pg_replication_origin_status
+ pg_replication_slots
+ pg_roles
+ pg_rules
+ pg_seclabels
+ pg_sequences
+ pg_settings
+ pg_shadow
+ pg_stat_activity
+ pg_stat_all_indexes
+ pg_stat_all_tables
+ pg_stat_archiver
+ pg_stat_bgwriter
+ pg_stat_database
+ pg_stat_database_conflicts
+ pg_stat_progress_vacuum
+ pg_stat_replication
+ pg_stat_ssl
+ pg_stat_subscription
+ pg_stat_sys_indexes
+ pg_stat_sys_tables
+ pg_stat_user_functions
+ pg_stat_user_indexes
+ pg_stat_user_tables
+ pg_stat_wal_receiver
+ pg_stat_xact_all_tables
+ pg_stat_xact_sys_tables
+ pg_stat_xact_user_functions
+ pg_stat_xact_user_tables
+
+IO的相关信息
+ pg_statio_all_indexes     
+ pg_statio_all_sequences
+ pg_statio_all_tables
+ pg_statio_sys_indexes
+ pg_statio_sys_sequences
+ pg_statio_sys_tables
+ pg_statio_user_indexes
+ pg_statio_user_sequences
+ pg_statio_user_tables
+ pg_stats
+表对象
+ pg_tables
+ 
+时区
+ pg_timezone_abbrevs
+ pg_timezone_names
+ 
+用户
+ pg_user
+ pg_user_mappings
+ pg_views
+
+
+系统管理函数
+https://www.postgresql.org/docs/9.6/functions-admin.html
+配置相关函数
+
+select current_setting('work_mem')
+select set_config('work_mem','6MB',true);
+
+备份相关函数
+
+select pg_current_wal_flush_lsn(),pg_current_wal_insert_lsn(), pg_current_wal_lsn() ;
+begin;
+BEGIN
+insert into t1 values(2000,'jef2223');
+INSERT 134238 1
+select pg_current_wal_flush_lsn(),pg_current_wal_insert_lsn(), pg_current_wal_lsn();
+
+ pg_current_wal_flush_lsn | pg_current_wal_insert_lsn | pg_current_wal_lsn 
+--------------------------+---------------------------+--------------------
+ A/AFBD6D60               | A/AFBD6DB0                | A/AFBD6D60
+(1 row)
+
+恢复的相关函数
+select * from pg_is_wal_replay_paused();
+
+
+数据库对象的函数
+
+select pg_relation_size('t1','main|vm|fsm');
+ pg_relation_size 
+------------------
+          5226496
+(1 row)
+
+
+对象文件位置的函数
+select pg_relation_filenode(relname::regclass),oid from pg_class where relname='t1'; 表文件ID和OID可能相同
+select pg_relation_filepath(relname::regclass),oid from pg_class where relname='t1';
+ pg_relation_filepath |  oid  
+----------------------+-------
+ base/13878/34226     | 25618
+
+文件访问函数
+
+select pg_ls_dir('./');
+select pg_ls_logdir();
+select pg_ls_waldir();
+select pg_read_file('./pg_log/postgresql-Wed.log',100,100);
+
+锁相关函数
+
+
+
+
+
+PG页结构
+https://www.postgresql.org/docs/current/pageinspect.html
+create extension pageinspect
+头文件信息
+SELECT * FROM page_header(get_raw_page('pg_class', 0));
+
+page header info
+https://www.postgresql.org/docs/9.6/storage-page-layout.html
+
+
+
+
+
+
